@@ -144,5 +144,5 @@ Les exigences réglementaires marocaines applicables (protection des données pe
 
 | Rôle | Nom | Date |
 |---|---|---|
-| Auteur | [Ton nom] | [date] |
+| Auteur | Mohammed OUCHCHEIKH | 25-11-2026 |
 | Sponsor (fictif) | Direction des risques, Atlas | n/a |
