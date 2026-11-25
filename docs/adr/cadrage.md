@@ -1,8 +1,8 @@
 # Note de cadrage : plateforme de données fraude et conformité
 
 **Client :** Atlas Banque & Assurance (cas fictif)
-**Auteur :** [Ton nom], ingénieur data
-**Version :** 1.0, [date]
+**Auteur :** mohammed ouchcheikh, ingénieur data .
+**Version :** 1.0, 25-11-1026
 **Statut :** cadrage initial
 
 > **Avertissement.** Atlas Banque & Assurance est un client fictif. Toutes les données utilisées sont simulées ou issues de jeux de données publics. Les chiffres du client (volumes, coûts, gains) sont des **hypothèses de travail**, signalées comme telles.
