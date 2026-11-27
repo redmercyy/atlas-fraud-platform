@@ -1,0 +1,118 @@
+# Atlas Fraud Platform : stack locale de départ
+#
+# Démarrage de base (Postgres) :
+#   docker compose up -d
+# Avec Airflow et Spark (profil "batch") :
+#   docker compose --profile batch up -d
+# Arrêt (les données sont conservées) :
+#   docker compose --profile batch down
+#
+# Le Lakehouse (Bronze / Silver / Gold) est stocké dans le dossier local ./lakehouse,
+# partagé entre Airflow et Spark.
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.5
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    LAKEHOUSE_PATH: /lakehouse
+  volumes:
+    - ./ingestion/airflow/dags:/opt/airflow/dags
+    - ./lakehouse:/lakehouse
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: atlas-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: atlas-airflow-init
+    profiles: ["batch"]
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username ${AIRFLOW_ADMIN_USER} \
+          --password ${AIRFLOW_ADMIN_PASSWORD} \
+          --firstname Admin --lastname Atlas \
+          --role Admin --email admin@example.com || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: atlas-airflow-web
+    profiles: ["batch"]
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: atlas-airflow-scheduler
+    profiles: ["batch"]
+    command: scheduler
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  spark-master:
+    image: apache/spark:3.5.3
+    container_name: atlas-spark-master
+    profiles: ["batch"]
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    volumes:
+      - ./transform/spark:/opt/spark-apps
+      - ./lakehouse:/lakehouse
+    mem_limit: 768m
+
+  spark-worker:
+    image: apache/spark:3.5.3
+    container_name: atlas-spark-worker
+    profiles: ["batch"]
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --memory 1G --cores 2
+    depends_on:
+      - spark-master
+    ports:
+      - "8082:8081"
+    volumes:
+      - ./transform/spark:/opt/spark-apps
+      - ./lakehouse:/lakehouse
+    mem_limit: 1536m
+
+volumes:
+  postgres-data:
+  airflow-logs:
